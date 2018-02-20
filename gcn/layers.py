@@ -55,7 +55,7 @@ class GraphConvLayer(nn.Module):
             return x
 
     def __repr__(self):
-        return '{} ({} -> {})'.format(self.__class__.name__, self.in_feats, self.out_feats)
+        return '{} ({} -> {})'.format(self.__class__.__name__, self.in_feats, self.out_feats)
 
 
 if __name__ == '__main__':
