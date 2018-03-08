@@ -37,8 +37,9 @@ class MLP(object):
 class GGNN(object):
     def __init__(self, args):
         # 1 layer mlp
-        self.regression_gate = MLP(hid_size, 1, [], dropout_prob)
-        self.regression_transform = MLP(hid_size, 1, [], dropout_prob)
+        self.gru = tf.contrib.rnn.GRUCell(args.hidden_size)
+        self.regression_gate = MLP(args.hid_size, 1, [], args.dropout_prob)
+        self.regression_transform = MLP(args.hid_size, 1, [], args.dropout_prob)
 
     def compute_node_reprs(self, node_repr, adj):
         h = node_repr

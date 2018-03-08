@@ -1,4 +1,6 @@
-from gcn import GCN
+import sys
+sys.path.append('../')
+from gcn.gcn import GCN
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -44,14 +46,14 @@ class QNetwork(nn.Module):
         max_vtx = None
         max_qval = 0
 
-        for v in range(n): 
+        for v in range(n):
             qval = self.qvalue(state, v)
             if qval > max_qval:
                 max_qval = qval
                 max_vtx = v
 
         return max_vtx
- 
+
     def take_action(self, state, v_t):
         pass
 
@@ -66,7 +68,7 @@ class QNetwork(nn.Module):
         for ind, (n_prev_state, v_t, reward, curr_state) in enumerate(batch):
             '''
             y = reward + discount * Q(current state, current action)
-            loss = y - Q(state_t, 
+            loss = y - Q(state_t,
             '''
             best_v = self.argmax(curr_state)
             expected[ind] = reward + discount * self.qvalue(curr_state, best_v)
