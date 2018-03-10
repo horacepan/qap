@@ -2,7 +2,34 @@ import pdb
 import torch
 import torch.nn as nn
 import math
+import torch.nn.functional as F
 from torch.autograd import Variable
+
+class GRU(nn.Module):
+    def __init__(self, in_size, out_size):
+        super(GRU, self).__init__()
+        shape = (in_size, out_size)
+        self.w_z = nn.Parameter(torch.rand(shape))
+        self.u_z = nn.Parameter(torch.rand(shape))
+        self.w_r = nn.Parameter(torch.rand(shape))
+        self.u_r = nn.Parameter(torch.rand(shape))
+        self.w = nn.Parameter(torch.rand(shape))
+        self.u = nn.Parameter(torch.rand(shape))
+        self.reset_parameters()
+
+    def forward(self, activations, hidden):
+        z_t = F.sigmoid(torch.mm(activations, self.w_z) + \
+                        torch.mm(hidden, self.u_z))
+        r_t = F.sigmoid(torch.mm(activations, self.w_r) + \
+                        torch.mm(hidden, self.u_r))
+
+        new_h = F.tanh(torch.mm(activations, self.w) + \
+                       torch.mm(r_t * hidden, self.u))
+        output =  (1 - z_t) * hidden + z_t * new_h
+        return output
+
+    def reset_parameters(self):
+        pass
 
 # Refs:
 # https://github.com/tkipf/pygcn/blob/master/pygcn/layers.py
