@@ -11,20 +11,26 @@ class GRU(nn.Module):
         shape = (in_size, out_size)
         self.w_z = nn.Parameter(torch.rand(shape))
         self.u_z = nn.Parameter(torch.rand(shape))
+        self.bias_z = nn.Parameter(torch.rand(out_size))
+
         self.w_r = nn.Parameter(torch.rand(shape))
         self.u_r = nn.Parameter(torch.rand(shape))
+        self.bias_r = nn.Parameter(torch.rand(out_size))
+
         self.w = nn.Parameter(torch.rand(shape))
         self.u = nn.Parameter(torch.rand(shape))
+        self.bias_u = nn.Parameter(torch.rand(out_size))
+
         self.reset_parameters()
 
     def forward(self, activations, hidden):
         z_t = F.sigmoid(torch.mm(activations, self.w_z) + \
-                        torch.mm(hidden, self.u_z))
+                        torch.mm(hidden, self.u_z) + self.bias_z)
         r_t = F.sigmoid(torch.mm(activations, self.w_r) + \
-                        torch.mm(hidden, self.u_r))
+                        torch.mm(hidden, self.u_r) + self.bias_r)
 
         new_h = F.tanh(torch.mm(activations, self.w) + \
-                       torch.mm(r_t * hidden, self.u))
+                       torch.mm(r_t * hidden, self.u) + self.bias_u)
         output =  (1 - z_t) * hidden + z_t * new_h
         return output
 
