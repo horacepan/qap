@@ -15,22 +15,24 @@ class QNet(nn.Module):
 
     def forward(self, state, action):
         '''
-        state: list or iterable of 1-dim torch Tensors        
+        state: torch Tensor of size batch * p
+        action: torch Tensor of size batch * p
         '''
-        summed_tour = sum(state).unsqueeze(1) # sum gives 1 dim tensor. Unsqueeze to get px1
-        mixed_summed_tour = self.theta_6.mm(summed_tour)
-        mixed_action = self.theta_7.mm(action.unsqueeze(1))
-        state_action_vec = torch.cat([mixed_summed_tour, mixed_action], dim=0) # 2p x 1
-        return self.theta_5.mm(F.relu(state_action_vec))
+        mixed_summed_tour = self.theta_6.matmul(state.unsqueeze(-1)) # batch x p
+        mixed_action = self.theta_7.matmul(action.unsqueeze(-1))
+        state_action_vec = torch.cat([mixed_summed_tour, mixed_action],
+                                     dim=action.dim() - 1) # batch x 2p x 1
+        return self.theta_5.matmul(F.relu(state_action_vec)).squeeze(-1) # batch x 1
 
 def test():
     embed_dim = 7
-    state = (Variable(torch.rand(7)), Variable(torch.rand(7)), Variable(torch.rand(7)))
-    action = Variable(torch.rand(7))
+    batch_size = 11
+    batch_state = Variable(torch.rand((batch_size, embed_dim)))
+    batch_action = Variable(torch.rand((batch_size, embed_dim)))
 
     qnet = QNet(embed_dim)
-    result = qnet(state, action)
-    assert result.size() == (1,1)
+    result = qnet(batch_state, batch_action)
+    assert result.size() == (batch_size, 1)
 
 if __name__ == '__main__':
     test()
