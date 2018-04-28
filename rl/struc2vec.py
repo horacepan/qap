@@ -10,6 +10,30 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 
+class GraphGenerator(object):
+    def __init__(self):
+        pass
+
+class GraphBatcher(object):
+    def __init__(self, graph_generator, batch_size, max_graph_size, node_label_size):
+        self.graph_generator = graph_generator
+        self.batch_size = bath_size
+        self.max_graph_size = max_graph_size
+        self.node_label_size = node_label_size
+
+    def next_batch(self):
+        batch_node_labels = torch.zeros((b, self.node_label_size))
+        batch_adjs = torch.zeros((b, self.max_graph_size, self.max_graph_size))
+        batch_edge_weights = torch.zeros((b, self.max_graph_size, self.max_graph_size))
+
+        for i in range(batch_size):
+            # generator here should give node labels, edge weights, adjacency matrix
+            node_labels, adj, weights = graph_generator.next()
+            n = len(adj)
+            batch_node_labels[i, :n] = node_labels
+            batch_adjs[i, :n, :n] = adj
+            batch_edge_weights[i, :n, :n] = weights
+        return batch_node_labels, batch_adjs, batch_edge_weights
 
 class Struc2Vec(nn.Module):
     def __init__(self, embed_dim, iters):
@@ -40,12 +64,13 @@ class Struc2Vec(nn.Module):
         edge_weights: torch Tensor
         adj: torch Tensor of 0/1s
         '''
-        vtx_contrib = self.theta_1 * node_labels
-        nbr_edge_weights = F.relu(self.theta_4 * torch.sum(edge_weights, dim=1, keepdim=True))
-        mixed_edge_weights = torch.mm(nbr_edge_weights, self.theta_3)
+        vtx_contrib = self.theta_1 * node_labels # n x p
+        nbr_edge_weights = F.relu(self.theta_4 * torch.sum(edge_weights, dim=1, keepdim=True)) # n x p
+        mixed_edge_weights = torch.mm(nbr_edge_weights, self.theta_3) # n x p
         for t in range(self.iters):
             nbr_update = torch.mm(torch.mm(adj, embeddings), self.theta_2)
             embeddings = F.relu(vtx_contrib + nbr_update + mixed_edge_weights)
+        print(embeddings.size())
         return embeddings
 
 def test():
@@ -59,7 +84,6 @@ def test():
     adj = Variable(torch.rand((graph_size, graph_size)))
     net = Struc2Vec(embed_dim, iters)
     embeddings = net(node_labels, embeddings, edge_weights, adj)
-    print(embeddings)
 
 if __name__ == '__main__':
     test()

@@ -15,8 +15,8 @@ class QNet(nn.Module):
 
     def forward(self, state, action):
         '''
-        state: torch Tensor of size batch * p
-        action: torch Tensor of size batch * p
+        state: torch Tensor of size batch * p(or just p)
+        action: torch Tensor of size batch * p(or just p)
         '''
         mixed_summed_tour = self.theta_6.matmul(state.unsqueeze(-1)) # batch x p
         mixed_action = self.theta_7.matmul(action.unsqueeze(-1))

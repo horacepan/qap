@@ -1,6 +1,7 @@
 from collections import NamedTuple
 
-Transition = namedtuple('Transition', ['state', 'action', 'new_state', 'reward'])
+# SARSA
+Transition = namedtuple('Transition', ['state', 'action', 'reward', 'new_state', 'max_action'])
 
 class ReplayMemory(object):
     def __init__(self, capacity):
