@@ -22,6 +22,32 @@ def make_perm(perm_lst):
 
     return perm_func
 
+def make_perm_matrix(perm_lst):
+    n = len(perm_lst)
+    pmat = np.zeros((n, n))
+    for i, _pi in enumerate(perm_lst):
+        pi = _pi - 1
+        pmat[pi, i] = 1
+    return pmat
+
+def make_inv_perm(perm_lst):
+    perm_dict = {pi: i+1 for i, pi in enumerate(perm_lst)}
+    def inv_perm(i):
+        assert 1 <= i <= len(perm_lst)
+        return perm_dict[i]
+    return inv_perm
+
+def apply_perm(B, perm):
+    out = np.zeros(B.shape)
+    for i in range(len(B)):
+        for j in range(len(B)):
+            p_i = perm(i+1) - 1
+            p_j = perm(j+1) - 1
+            out[p_i, p_j] = B[i, j]
+
+    # another way
+
+    return out
 def read_problem(fname):
     with open(fname, 'r') as f:
         n = int(f.readline().strip())
@@ -43,9 +69,9 @@ def read_problem(fname):
 def read_soln(fname):
     with open(fname, 'r') as f:
         n, val = map(int, f.readline().strip().split())
-        p = list(map(int, f.readline().strip().split()))
-        perm = make_perm(p)
-        return val, perm
+        perm_lst = list(map(int, f.readline().strip().split()))
+        perm = make_perm(perm_lst)
+        return val, perm, perm_lst
 
 def check_soln(A, B, perm, soln):
     '''
@@ -74,9 +100,25 @@ def check_instance(name):
     dat_name = '../data/{}/{}.dat'.format(DATDIR, name)
     sln_name = '../data/{}/{}.sln'.format(SLNDIR, name)
     A, B = read_problem(dat_name)
-    val, perm = read_soln(sln_name)
+    val, perm, perm_lst = read_soln(sln_name)
     check_soln(A, B, perm, val)
+
+    # another check via creating the perm matrix
+    inv_perm = make_inv_perm(perm_lst)
+    perm_B = apply_perm(B, inv_perm)
+    sol = np.sum(np.multiply(A, perm_B))
+
+    sol2 = 0
+    for i in range(len(A)):
+        for j in range(len(A)):
+            sol2 += A[i, j] * perm_B[i, j]
+    if sol != val:
+        pdb.set_trace()
+    if sol2 != val:
+        pdb.set_trace()
     print('Instance {} is okay'.format(name))
 
 if __name__ == '__main__':
+    pmat = make_perm_matrix([2, 1, 3])
+    pdb.set_trace()
     check_instance('nug12')
