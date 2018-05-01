@@ -9,10 +9,19 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+import random
 
 class GraphGenerator(object):
-    def __init__(self):
-        pass
+    def __init__(self, lo, hi):
+        self.lo = lo
+        self.hi = hi
+
+    def next(self):
+        n = random.randint(self.lo, self.hi)
+        weights = Variable(torch.rand((n, n)))
+        adj = Variable((torch.rand((n, n)) > 0.5).float())
+        node_labels = Variable(torch.rand((n, 1)))
+        return node_labels, weights, adj
 
 class GraphBatcher(object):
     def __init__(self, graph_generator, batch_size, max_graph_size, node_label_size):
@@ -42,10 +51,10 @@ class Struc2Vec(nn.Module):
         self.iters = iters
 
         # param names in accordance with the paper. Here embed_dim = p
-        self.theta_1 = nn.Parameter(torch.Tensor(embed_dim))
-        self.theta_2 = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
-        self.theta_3 = nn.Parameter(torch.Tensor(embed_dim, embed_dim))
-        self.theta_4 = nn.Parameter(torch.Tensor(embed_dim))
+        self.theta_1 = nn.Parameter(torch.zeros(embed_dim))
+        self.theta_2 = nn.Parameter(torch.zeros(embed_dim, embed_dim))
+        self.theta_3 = nn.Parameter(torch.zeros(embed_dim, embed_dim))
+        self.theta_4 = nn.Parameter(torch.zeros(embed_dim))
         self._reset_weights()
     def _reset_weights(self):
         '''
@@ -57,20 +66,21 @@ class Struc2Vec(nn.Module):
         self.theta_3.data.normal_(0, 1)
         self.theta_4.data.normal_(0, 1)
 
-    def forward(self, node_labels, embeddings, edge_weights, adj):
+    def forward(self, node_labels, edge_weights, adj):
         '''
         node_labels: torch Tensor of the node labels
         embeddings: torch Tensor
         edge_weights: torch Tensor
         adj: torch Tensor of 0/1s
         '''
+        n = len(node_labels)
+        embeddings = Variable(torch.zeros((n, self.embed_dim)))
         vtx_contrib = self.theta_1 * node_labels # n x p
         nbr_edge_weights = F.relu(self.theta_4 * torch.sum(edge_weights, dim=1, keepdim=True)) # n x p
         mixed_edge_weights = torch.mm(nbr_edge_weights, self.theta_3) # n x p
         for t in range(self.iters):
             nbr_update = torch.mm(torch.mm(adj, embeddings), self.theta_2)
             embeddings = F.relu(vtx_contrib + nbr_update + mixed_edge_weights)
-        print(embeddings.size())
         return embeddings
 
 def test():
@@ -79,11 +89,14 @@ def test():
     graph_size = 20
 
     node_labels = Variable(torch.rand((graph_size, 1)) > 0.5).float()
-    embeddings = Variable(torch.rand((graph_size, embed_dim)))
     edge_weights = Variable(torch.rand((graph_size, graph_size)))
     adj = Variable(torch.rand((graph_size, graph_size)))
     net = Struc2Vec(embed_dim, iters)
-    embeddings = net(node_labels, embeddings, edge_weights, adj)
-
+    embeddings = net(node_labels, edge_weights, adj)
+    summed = torch.sum(embeddings)
+    loss_fn = F.mse_loss
+    truth = Variable(torch.rand((1,1)))
+    loss = loss_fn(truth, summed)
+    loss.backward()
 if __name__ == '__main__':
     test()
