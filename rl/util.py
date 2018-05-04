@@ -1,3 +1,5 @@
+import math
+
 class GraphGenerator(object):
     def __init__(self):
         pass

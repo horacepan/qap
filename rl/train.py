@@ -1,10 +1,13 @@
+import random
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
+from replaybuffer import ReplayBuffer
+import torch.optim as optim
 
 from qnet import QNet
-from struc2vec import Struc2Vec
+from struc2vec import Struc2Vec, GraphGenerator
 import util
 
 def get_reward(curr_tour, new_vtx, edge_weights):
@@ -25,19 +28,19 @@ def arg_max_action(qnet, vtx_features, remaining_vertices):
         for v in vtx_features:
             action = vtx_features[v]
             reward = qnet(state, action)
-            if reward > best_reward
+            if reward > best_reward:
                 best_reward = reward
                 best_vtx = v
 
         return best_vtx, best_reward
 
-def train(eps_start, eps_end, eps_decy, n_step, mem_capacity, num_episodes, embed_dim, iters):
-    graph_generator = util.GraphGenerator()
-    memory = ReplayMemory(mem_capacity)
+def train_v1(eps_start, eps_end, eps_decay, n_step, mem_capacity, num_episodes, embed_dim, iters):
+    graph_generator = GraphGenerator(16, 16)
+    memory = ReplayBuffer(mem_capacity)
     steps_done = 0
     gnn = Struc2Vec(embed_dim, iters)
     qnet = QNet(embed_dim)
-    optimizer = optim.Adam(gnn.parameters() + qnet.parameters(), lr=0.0001, weight_decay=1e-4)
+    optimizer = optim.Adam(list(gnn.parameters()) + list(qnet.parameters()), lr=0.0001, weight_decay=1e-4)
     for e in range(num_episodes):
         node_labels, adj, edge_weights = graph_generator.next()
         vtx_feats = gnn(node_labels, adj, edge_weights)
@@ -103,3 +106,19 @@ def train(eps_start, eps_end, eps_decy, n_step, mem_capacity, num_episodes, embe
 
             state += action
             steps_done += 1
+
+def main():
+    random.seed(0)
+    torch.manual_seed(0)
+    eps_start = 0.9
+    eps_end = 0.05
+    eps_decay = 1000
+    n_step = 1
+    mem_capacity = 1000
+    num_episodes = 10
+    embed_dim = 10
+    iters = 3
+    train_v1(eps_start, eps_end, eps_decay, n_step, mem_capacity, num_episodes, embed_dim, iters)
+
+if __name__ == '__main__':
+    main()

@@ -10,7 +10,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import numpy as np
 import random
-from replaybuffer import ReplayBuffer
+from replaybuffer import ReplayBuffer, Transition
 
 def binary_state(n, indices):
     '''
@@ -37,39 +37,41 @@ class QNetwork(nn.Module):
         self.action_weight.data.normal_(0, 1)
         self.fc.data.normal_(0, 1)
 
-    def qvalue(self, state, vtx):
-        '''
-        State = list of ints(vertices)
-        vertex = int
-        '''
-        # TODO: should the state already be the torch tensor of 1s?
-        n = len(self.embedding)
-        state_rep = self.embedding[state].sum(dim=0).unsqueeze(1)
-        vtx_rep = self.embedding[vtx].unsqueeze(1)
-        qval = self._qvalue(state_rep, vtx_rep)
-        return qval
-
     def _qvalue(self, state_vec, action_vec):
         '''
         state_vec:  p x 1 representation of the state
-        action_vec: p x 1 representation of the action(vertex) chosen
+        action_vec: p x k representation of the action(vertex) chosen. k = number of actions
+        to compute
         '''
-        state_mixed = self.state_weight.mm(state_vec) # p x 1
-        action_mixed = self.action_weight.mm(action_vec) # p x 1
+        actions = action_vec.size(-1)
+        state_mixed = self.state_weight.mm(state_vec.unsqueeze(-1)) # p x 1
+        action_mixed = self.action_weight.mm(action_vec.unsqueeze(-1)) # p x 1
         sa_vec = F.relu(torch.cat([state_mixed, action_mixed], dim=0)) # 2p x 1
         return self.fc.t().mm((sa_vec))
 
-    def best_action(self, state, allowed_actions=None):
-        n = len(self.embedding)
+    def batch_qvalues(self, state_vecs, action_vecs):
+        if state_vecs.size(-1) != action_vecs.size(-1):
+            assert state_vecs.size(-1) == 1
+
+        state_mixed = state_vecs.mm(self.state_weight) # 1 x p
+        action_mixed = action_vecs.mm(self.action_weight)# (k x p) x (p x p)
+        if state_mixed.size(0) != action_vecs.size(0):
+            assert state_mixed.size(0) == 1 # 1 x p
+            state_mixed = state_mixed.repeat(action_mixed.size(0), 1) # k x p
+
+        sa_vecs = F.relu(torch.cat([state_mixed, action_mixed], dim=1)) # k x 2p
+        return sa_vecs.mm(self.fc) # try to return a 2k x 1 thing
+
+    def best_action(self, state, allowed_actions=None, embedding=None):
+        n = len(embedding)
         if allowed_actions is None:
             allowed_actions = range(n)
 
-        qvalues = [float(self.qvalue(state, v)) for v in allowed_actions]
-        max_vtx = allowed_actions[np.argmax(qvalues)]
+        actions = embedding[allowed_actions]
+        state_vec = embedding[state].sum(dim=0, keepdim=True)
+        qvalues = self.batch_qvalues(state_vec, actions)
+        max_vtx = allowed_actions[np.argmax(qvalues.data)]
         return max_vtx
-
-    def take_action(self, state, v_t):
-        return self.qvalue(state, v_t)
 
     def backprop_batch(self, batch, optimizer):
         '''
@@ -82,17 +84,16 @@ class QNetwork(nn.Module):
         # or also just store the qvalue
         '''
         optimizer.zero_grad()
+        batch_t = Transition(*zip(*batch))
 
-        expected = Variable(torch.zeros(len(batch)))
-        computed = Variable(torch.zeros(len(batch)))
-        for ind, (n_prev_state, v_t_n, reward, curr_state) in enumerate(batch):
-            '''
-            y = reward + discount * Q(current state, current action)
-            loss = y - Q(state_t,
-            '''
-            curr_v = self.best_action(curr_state)
-            expected[ind] = reward + discount * self.qvalue(curr_state, curr_v)
-            computed[ind] = self.qvalue(n_prev_state, v_t_n)
+        batch_state = torch.cat(batch_t.state, dim=0)
+        batch_action = torch.cat(batch_t.action, dim=0)
+        batch_new_state = torch.cat(batch_t.new_state, dim=0)
+        batch_best_action = torch.cat(batch_t.best_action, dim=0)
+        batch_reward = Variable(torch.FloatTensor(batch_t.reward).unsqueeze(1))
+
+        expected = batch_reward + discount * self.batch_qvalues(batch_new_state, batch_best_action)
+        computed = self.batch_qvalues(batch_state, batch_action)
 
         loss = F.mse_loss(expected, computed)
         loss.backward(retain_graph=True)
@@ -106,14 +107,13 @@ class QNetwork(nn.Module):
         '''
         Pass the graph through the gcn. Return the embedding of all nodes
         '''
-        self.embedding = self.struc2vec(node_labels, edge_weights, adj)
-        return self.embedding
+        return self.struc2vec(node_labels, edge_weights, adj)
 
 def get_optimizer(opt_params):
     return optim.Adam(**opt_params)
 
 def update_exploration(eps):
-    return 0.01 * eps
+    return 0.99 * eps
 
 def train(graph_distr, epochs, batch_size, eps, n_step, discount, capacity, gcn_params, opt_params):
     '''
@@ -134,40 +134,55 @@ def train(graph_distr, epochs, batch_size, eps, n_step, discount, capacity, gcn_
 
     for e in range(epochs):
         node_labels, edge_weights, adj = graph_distr.next()
-        qnet.embed_graph(node_labels, edge_weights, adj)
+        embedding = qnet.embed_graph(node_labels, edge_weights, adj)
 
-        # should just have an arbitrary vertex here?
-        state = [0]
+        state = [] # s_0
+        state_vec = Variable(torch.zeros((1, qnet.embed_dim)))
+        state_vec_prev = None
+        actions = []
         rewards = []
         s_complement = set(range(len(adj)))
-        s_complement.remove(0)
         losses = []
-        for t in range(len(adj)-1):
-            if random.random() < eps:
+        best_actions = []
+
+        for t in range(len(adj)):
+            if t > 0:
+                v_best_t = qnet.best_action(state, list(s_complement), embedding)
+            if random.random() < eps or t == 0:
                 v_t = random.choice(tuple(s_complement))
             else:
-                v_t = qnet.best_action(state, tuple(s_complement))
+                v_t = v_best_t
 
-            vprev = state[-1]
-            r_t = -edge_weights[vprev, v_t]
+            action_vec = embedding[v_t].unsqueeze(0)
+            vprev = None if t == 0 else state[-1]
+            r_t = 0 if t == 0 else -edge_weights.data[vprev, v_t]
             s_complement.remove(v_t)
 
-            if t > n_step:
-                #state_vec = get_sum(embedding, state[:t-n])
-                #action_vec = embedding[state[t-n]]
-                #new_state_vec = get_sum(embedding, state)
-                #episode = (state_vec, action_vec, sum(rewards[t-n:]), new_state_vec)
+            # ideally store: s_0 , a_0, r_0, s_1, v_best_1
+            # ideally store: s_1 , a_1, r_1, s_2, v_best_2
+            if t >= n_step:
                 new_state = state[:]
-                episode = (state[:t-n_step], state[t-n_step], sum(rewards[t-n_step:]), new_state)
+                # the action prev is what action got taken.
+                # v_best_t must be the argmax action of the current state
+                v_best_embedding = embedding[v_best_t].unsqueeze(0)
+                episode = (state_vec_prev, action_vec_prev, rewards[-1], state_vec, v_best_embedding)
+                # should try to add v_best_t so we dont recompute later
+
                 memory.push(*episode)
                 if len(memory) > batch_size:
                     batch = memory.sample(batch_size)
                     batch_loss = qnet.backprop_batch(batch, optimizer)
                     losses.append(batch_loss)
+
+
+            state_vec_prev = state_vec
+            action_vec_prev = action_vec
             state.append(v_t)
+            state_vec = state_vec +  action_vec
             rewards.append(r_t)
+
         epoch_loss = torch.mean(torch.cat(losses))
-        print('Epoch {} | avg loss: {:.3f}'.format(e, float(epoch_loss)))
+        print('Epoch {} | avg loss: {:.3f} | Exploration rate: {:.3f}'.format(e, float(epoch_loss), eps))
         eps = update_exploration(eps)
 
 if __name__ == '__main__':
@@ -177,10 +192,10 @@ if __name__ == '__main__':
     epochs = 1000
     batch_size = 10
     eps = 0.9
-    n_step = 3
+    n_step = 1
     discount = 0.99
     capacity = 100
     gcn_params = {'embed_dim': 11, 'iters': 4}
     adam_params = {'lr': 0.01, 'weight_decay': 1e-4}
-    graph_distr = GraphGenerator(16, 16)
+    graph_distr = GraphGenerator(16, 20)
     train(graph_distr, epochs, batch_size, eps, n_step, discount, capacity, gcn_params, adam_params)

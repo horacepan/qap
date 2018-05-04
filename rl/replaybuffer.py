@@ -2,7 +2,7 @@ from collections import namedtuple
 import random
 
 # SARSA
-Transition = namedtuple('Transition', ['state', 'action', 'reward', 'new_state'])
+Transition = namedtuple('Transition', ['state', 'action', 'reward', 'new_state', 'best_action'])
 
 class ReplayBuffer(object):
     def __init__(self, capacity):
